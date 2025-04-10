@@ -19,6 +19,7 @@ This project is a **compact**, fully **CPU-compatible** AI chatbot that allows u
 - ✅ **Multi-document search** works across all PDFs simultaneously
 - ✅ Document source attribution in responses 
 - ✅ **Built-in conversation memory** for follow-up questions
+- ✅ **Dual interface**: console and web UI
 - ✅ Simple, streamlined interface
 - ✅ Well-documented and under 200 lines of code
 
@@ -124,14 +125,30 @@ Make sure Ollama is running (`ollama run mistral` test works).
 
 ## 🧑‍💻 Run the Chatbot
 
+### Console Interface
+
 ```bash
 python chat_pdf.py
 ```
 
-The chatbot:
+The console chatbot:
 1. Automatically loads all PDFs in the `pdfs/` folder
 2. Remembers your conversation history
 3. Provides document sources for information
+
+### Web Interface
+
+```bash
+python chat_pdf_web.py --web
+```
+
+The web interface offers:
+1. User-friendly chat UI
+2. PDF upload through drag-and-drop
+3. Document management
+4. Conversation history visualization
+
+### Example Questions
 
 Ask questions like:
 - "What is this PDF about?"
@@ -141,8 +158,9 @@ Ask questions like:
 - "Remember that I'm interested in X"
 - "Based on what I asked earlier..."
 
-Special commands:
-- "exit" or "quit": Exit the program
+### Special Commands
+
+- "exit" or "quit": Exit the program (console only)
 - "clear memory", "forget", or "clear context": Reset conversation memory
 
 ## 🔍 Multi-PDF Search
