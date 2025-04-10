@@ -1,4 +1,4 @@
-Here’s a **complete implementation design + user guide** in one file (`README.md` style), explaining how your **CPU-only RAG PDF Chatbot with LangChain and Ollama** works.
+Here's a **complete implementation design + user guide** in one file (`README.md` style), explaining how your **CPU-only RAG PDF Chatbot with LangChain and Ollama** works.
 
 You can save this as a `README.md` or just a reference text doc.
 
@@ -80,13 +80,30 @@ cache/                  # Auto-generated text + vector cache
 
 ## ⚙️ Setup Instructions
 
-### 1. 🐍 Install dependencies
+### 1. 🐍 Create and activate virtual environment
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows CMD:
+venv\Scripts\activate
+
+# On Windows Git Bash:
+source venv/Scripts/activate
+
+# On Unix or MacOS:
+source venv/bin/activate
+```
+
+### 2. 📦 Install dependencies
 
 ```bash
 pip install langchain langchain-core langchain-community langchain-ollama langchain-text-splitters pymupdf faiss-cpu
 ```
 
-### 2. 📦 Install and run Ollama
+### 3. 📥 Install and run Ollama
 
 Install Ollama: [https://ollama.com/download](https://ollama.com/download)
 

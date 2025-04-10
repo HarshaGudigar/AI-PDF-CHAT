@@ -1,0 +1,124 @@
+Page 1 of 4 
+PDF Files 
+Scan – Create – Reduce File Size  
+ 
+ 
+It is recommended that you purchase an Adobe Acrobat product that 
+allows you to read, create and manipulate PDF documents.  Go to 
+http://www.adobe.com/products/acrobat/matrix.html to compare 
+Adobe products and features –Adobe Acrobat Standard is sufficient. 
+ 
+ 
+Scanning Documents 
+ 
+You should only have to scan documents that are not electronic, and 
+when you are unable to create a PDF using PDFMaker or the Print 
+Command from the application you are using.   
+ 
+Signature Pages 
+If you have a document such as a CV that requires a signature on a 
+page only print the page that requires the signature –printing the 
+entire document and scanning it is not necessary or desired.  Once you 
+sign and scan the signature page you can combine it with the original 
+document using the Create PDF From Multiple Files feature. 
+ 
+Scanner Settings 
+Before scanning documents remember to make certain that the 
+following settings are activated on your scanner (settings may vary): 
+ Document Mode 
+ Scan to smallest size 
+ Fast (lowest quality) 
+ Grayscale or black and white  
+ Resolution: 300dpi or less 
+ 
+
+Page 2 of 4 
+Creating PDF Documents 
+ 
+ 
+Option 1 – Use Adobe PDF Printer Command: 
+In many authoring applications, you can use the Print command with 
+the Adobe PDF printer to convert your file to PDF.  
+ 
+Create a PDF using the Print command (Windows) 
+1. Open the file in its authoring application, and choose File > Print. 
+2. Choose Adobe PDF from the printer menu. 
+ 
+ 
+ 
+3. Click the Properties (or Preferences) button to customize the Adobe 
+PDF printer setting. (In some applications, you may need to click 
+Setup in the Print dialog box to open the list of printers, and then click 
+Properties or Preferences.)  Choose Smallest File Size as your default 
+setting. 
+ 
+ 
+ 
+4. In the Print dialog box, click OK and Save your file. 
+ 
+ 
+ 
+Create a PDF using the Print command (Mac OS) 
+1. Open the file in its authoring application, and choose File > Print. 
+2. Click on the PDF button in the Print window. 
+3. Click Save as PDF.
+
+Page 3 of 4 
+Creating PDF Documents (continued) 
+ 
+Option 2: If you do not have Acrobat Standard or higher 
+installed use PS2PSF.*  
+ 
+ 
+ 
+ 
+ 
+ 
+1. Open the file in its authoring application, and choose File > Print. 
+2. Select “Print to File” and save. 
+3. Open your browser and go to http://ps2pdf.com/convert.htm 
+4. Click “browse” select the file you created in step 2 (.prn or .ps), 
+click “convert” 
+5. Download the newly created PDF file. 
+*Note: Some formatting changes may occur once converted (bullets 
+may turn to symbols and color may become black and white). 
+ 
+ 
+ 
+ 
+ 
+
+Page 4 of 4 
+Reducing File Size Options 
+ 
+*WebDCU will accept files up to 2.0MB.* 
+ 
+Here is a rough estimate for PDF file sizes: 
+If the contents are pure text, like a CV, the file size is usually 10kb per 
+page; therefore, a 1MB file will have about 100 pages.  If the file 
+includes some pictures, the file size may increase. If the file is a 
+picture, like a scanned license or certification, you may have different 
+file sizes based on the picture quality.  In most cases, saving the file at 
+about 250kb per page should be enough to generate a clear picture. 
+ 
+Option 1 – Use Adobe PDF Print Command: 
+1. Open the PDF file, and choose File > Print. 
+2. Choose Adobe PDF from the printer menu next to Name. 
+3. Click the Properties (or Preferences) button to customize the Adobe 
+PDF printer setting. (In some applications, you may need to click 
+Setup in the Print dialog box to open the list of printers, and then click 
+Properties or Preferences.)  Choose Smallest File Size as your default 
+setting. 
+4. In the Print dialog box, click OK.   
+5. Save the new (smaller) PDF file. 
+ 
+ 
+Option 2 – Use Adobe PDF “Reduce File Size”: 
+1. Open the file in Adobe Acrobat and choose File > Reduce File Size...  
+2. For our purposes, please make these files "compatible with" version 
+Acrobat 5.0 or later. 
+3. Save the new (smaller) PDF file. 
+ 
+ 
+ 
+ 
