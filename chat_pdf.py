@@ -1,4 +1,4 @@
-import os, time, sys, threading, pickle, fitz  # PyMuPDF
+import os, time, sys, threading, pickle, fitz, signal  # PyMuPDF
 
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -8,6 +8,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableMap, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
+from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 PDF_DIR = "pdfs"
@@ -92,16 +94,27 @@ def combine_retrievers(vector_stores):
     
     return retrieve_from_all
 
-def setup_rag_chain(vector_stores):
+def setup_conversation_memory():
+    """Initialize conversation memory to store chat history."""
+    return ConversationBufferMemory(
+        memory_key="chat_history", 
+        return_messages=True,
+        output_key="answer"
+    )
+
+def setup_rag_chain(vector_stores, memory):
     retriever = combine_retrievers(vector_stores)
 
+    # Improved prompt template that handles personal information and PDF content
     prompt = PromptTemplate.from_template(
-        "You are a helpful assistant answering questions about multiple PDF files.\n"
+        "You are a helpful assistant answering questions about PDF files and maintaining a conversation with the user.\n"
         "If the question is about metadata such as number of pages or file size, "
         "answer with the information for all relevant documents.\n"
-        "For all other questions, answer concisely based on the document content.\n"
-        "Always include the document source name (filename) for any information you provide.\n\n"
+        "For questions about the documents, answer concisely based on the document content.\n"
+        "For personal questions or information the user has shared with you previously, use the chat history to respond appropriately.\n"
+        "Always include the document source name (filename) for any PDF information you provide.\n\n"
         "Document Context:\n{context}\n\n"
+        + "Chat History:\n{chat_history}\n\n" +
         "Question: {question}\n\n"
         "Answer:"
     )
@@ -125,11 +138,24 @@ def setup_rag_chain(vector_stores):
         # First show metadata sections, then content sections
         all_sections = metadata_sections + content_sections
         return "\n\n".join(all_sections)
+    
+    # Format chat history for the prompt
+    def get_chat_history(inputs):
+        memory_data = memory.load_memory_variables({})
+        history = memory_data.get("chat_history", [])
+        formatted_history = []
+        for message in history:
+            if isinstance(message, HumanMessage):
+                formatted_history.append(f"Human: {message.content}")
+            elif isinstance(message, AIMessage):
+                formatted_history.append(f"AI: {message.content}")
+        return "\n".join(formatted_history)
 
     return (
         {
-            "context": lambda x: format_docs(retriever(x)), 
-            "question": RunnablePassthrough(),
+            "context": lambda x: format_docs(retriever(x["question"])), 
+            "question": lambda x: x["question"],
+            "chat_history": get_chat_history,
          }
         | prompt
         | llm
@@ -144,31 +170,37 @@ def loading_spinner(stop_event):
         idx += 1
         time.sleep(0.1)
 
+def handle_sigint(sig, frame):
+    """Handle SIGINT (Ctrl+C) gracefully."""
+    print("\n\n👋 Exiting gracefully. Goodbye!")
+    sys.exit(0)
+
 def main():
+    # Register signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, handle_sigint)
+    
+    # Check for PDFs
     pdfs = [f for f in os.listdir(PDF_DIR) if f.endswith(".pdf")]
     if not pdfs:
         print("⚠️  No PDFs found in 'pdfs/' folder.")
         return
 
-    print("📚 Available PDFs:")
-    for i, name in enumerate(pdfs, 1):
-        print(f"{i}: {name}")
+    # Always use conversation memory
+    memory = setup_conversation_memory()
     
-    print("\nOptions:")
-    print("1: Select single PDF")
-    print("2: Search across all PDFs")
+    # Always process all PDFs
+    print("📚 Found PDFs:")
+    for name in pdfs:
+        print(f" - {name}")
     
-    mode = int(input("Choose an option: "))
+    print("\n⏳ Loading all documents and setting up chat...")
+    vector_stores = []
     
-    if mode == 1:
-        # Single PDF mode - original functionality
-        choice = int(input("Select a PDF to chat with: ")) - 1
-        pdf = pdfs[choice]
+    for pdf in pdfs:
         pdf_path = os.path.join(PDF_DIR, pdf)
         txt_cache = os.path.join(CACHE_DIR, pdf + ".txt")
         faiss_cache = os.path.join(CACHE_DIR, pdf.replace(".pdf", "_faiss"))
-
-        # Show metadata
+        
         doc = fitz.open(pdf_path)
         num_pages = len(doc)
         file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
@@ -177,82 +209,82 @@ def main():
             "num_pages": num_pages,
             "file_size_mb": f"{file_size_mb:.2f} MB"
         }
-
+        
         text = extract_text(pdf_path, txt_cache)
         vector_store = build_vector_store(text, faiss_cache, metadata)
         
-        # Original single-PDF functionality
-        rag_chain = setup_rag_chain([{"vector_store": vector_store, "metadata": metadata}])
-        
-        print(f"✅ Ready to chat with {pdf}! Type your questions below ('exit' to quit).\n")
-
-    elif mode == 2:
-        # Multi-PDF mode - new functionality
-        print("Loading all PDFs...")
-        vector_stores = []
-        
-        for pdf in pdfs:
-            pdf_path = os.path.join(PDF_DIR, pdf)
-            txt_cache = os.path.join(CACHE_DIR, pdf + ".txt")
-            faiss_cache = os.path.join(CACHE_DIR, pdf.replace(".pdf", "_faiss"))
-            
-            doc = fitz.open(pdf_path)
-            num_pages = len(doc)
-            file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
-            metadata = {
-                "title": pdf,
-                "num_pages": num_pages,
-                "file_size_mb": f"{file_size_mb:.2f} MB"
-            }
-            
-            print(f"⏳ Processing {pdf}...")
-            text = extract_text(pdf_path, txt_cache)
-            vector_store = build_vector_store(text, faiss_cache, metadata)
-            
-            vector_stores.append({
-                "vector_store": vector_store,
-                "metadata": metadata
-            })
-        
-        # Add a special query to check metadata
-        print("\n📊 Document Metadata Summary:")
-        for store in vector_stores:
-            meta = store["metadata"]
-            print(f" - {meta['title']}: {meta['num_pages']} pages, {meta['file_size_mb']} size")
-            
-        rag_chain = setup_rag_chain(vector_stores)
-        
-        print(f"\n✅ Ready to search across {len(pdfs)} PDFs! Type your questions below ('exit' to quit).\n")
+        vector_stores.append({
+            "vector_store": vector_store,
+            "metadata": metadata
+        })
     
-    else:
-        print("Invalid option. Exiting...")
-        return
+    # Add a special query to check metadata
+    print("\n📊 Document Summary:")
+    for store in vector_stores:
+        meta = store["metadata"]
+        print(f" - {meta['title']}: {meta['num_pages']} pages, {meta['file_size_mb']} size")
+        
+    rag_chain = setup_rag_chain(vector_stores, memory)
+    
+    print("\n✅ Ready! Chat with your documents. Type questions or 'exit' to quit.")
+    print("\n📝 Special commands:")
+    print(" - 'exit' or 'quit': End the session")
+    print(" - 'clear memory' or 'forget': Reset conversation history")
+    print("\n")
 
     while True:
-        question = input("🧑 You: ")
-        if question.lower() in ["exit", "quit"]:
-            print("👋 Goodbye!")
-            break
-
-        stop_event = threading.Event()
-        thread = threading.Thread(target=loading_spinner, args=(stop_event,))
-        thread.start()
-
         try:
-            response = rag_chain.invoke(question)
-        finally:
-            stop_event.set()
-            thread.join()
+            question = input("🧑 You: ")
+            if question.lower() in ["exit", "quit"]:
+                print("👋 Goodbye!")
+                break
+            if question.lower() in ["clear memory", "forget", "clear context"]:
+                memory.clear()
+                print("🧹 Memory cleared! Previous context has been forgotten.")
+                continue
 
-        print("\r🤖 Bot:", flush=True)
+            stop_event = threading.Event()
+            thread = threading.Thread(target=loading_spinner, args=(stop_event,))
+            thread.start()
 
-        # Check if response is a string or has `.content`
-        answer = response.content if hasattr(response, "content") else str(response)
+            try:
+                # Pre-process to extract any special directives for memory
+                remember_info = ""
+                if question.lower().startswith(("remember ", "note that ")):
+                    remember_info = "I'll remember that. "
+                
+                # For memory-enabled chains, we pass a dict with the question
+                response = rag_chain.invoke({"question": question})
+                
+                # Save the interaction to memory
+                memory.save_context(
+                    {"question": question}, 
+                    {"answer": response.content if hasattr(response, "content") else str(response)}
+                )
+                
+                # Add the remember prefix to the response if needed
+                if remember_info:
+                    if hasattr(response, "content"):
+                        response.content = remember_info + response.content
+                    else:
+                        response = remember_info + str(response)
+            finally:
+                stop_event.set()
+                thread.join()
 
-        for word in answer.split():
-            print(word, end=" ", flush=True)
-            time.sleep(0.03)
-        print()
+            print("\r🤖 Bot:", flush=True)
+
+            # Check if response is a string or has `.content`
+            answer = response.content if hasattr(response, "content") else str(response)
+
+            for word in answer.split():
+                print(word, end=" ", flush=True)
+                time.sleep(0.03)
+            print()
+        except KeyboardInterrupt:
+            # This is a backup in case the signal handler doesn't catch it
+            print("\n\n👋 Exiting gracefully. Goodbye!")
+            break
 
 
 if __name__ == "__main__":

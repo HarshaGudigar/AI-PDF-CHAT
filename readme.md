@@ -16,11 +16,11 @@ This project is a **compact**, fully **CPU-compatible** AI chatbot that allows u
 - ✅ Uses CPU-only local LLMs (via [Ollama](https://ollama.com/))
 - ✅ Streams responses with a spinner
 - ✅ Text and vector **caching** for fast reuse
-- ✅ Supports multiple PDFs
-- ✅ **Advanced multi-PDF search** capability
-- ✅ Document source attribution in responses
+- ✅ **Multi-document search** works across all PDFs simultaneously
+- ✅ Document source attribution in responses 
+- ✅ **Built-in conversation memory** for follow-up questions
+- ✅ Simple, streamlined interface
 - ✅ Well-documented and under 200 lines of code
-- ✅ Frontend ready (backend clean and modular)
 
 ---
 
@@ -54,31 +54,32 @@ cache/                  # Auto-generated text + vector cache
 
 ## 🚀 How It Works (Design Flow)
 
-### 1. 📄 PDF Selection
-- User can choose between **single PDF mode** or **multi-PDF search mode**
-- For single mode: select one PDF to chat with
-- For multi mode: system loads and indexes all PDFs in the folder
+### 1. 📄 Automatic PDF Loading
+- All PDFs in the `pdfs/` folder are loaded automatically
+- Metadata (pages, file size) is extracted and displayed
   
 ### 2. 📚 Text Extraction + Caching
-- If cached `.txt` exists → load text.
-- Else → extract using `fitz` (PyMuPDF) and cache to `.txt`.
+- If cached `.txt` exists → load text
+- Else → extract using `fitz` (PyMuPDF) and cache to `.txt`
 
 ### 3. 🧠 Chunking + Embedding + FAISS Index
-- If `.faiss` exists → load cached index.
-- Else → split text into chunks → embed with `OllamaEmbeddings` → store in FAISS → save to `.pkl`.
+- If `.faiss` exists → load cached index
+- Else → split text into chunks → embed with `OllamaEmbeddings` → store in FAISS → save to cache
 
-### 4. 🔄 RAG Chain Setup
+### 4. 🔄 RAG Chain with Memory
 - A **RAG chain** is created using:
-  - Retriever (from FAISS)
+  - Retrievers from all PDF vector stores
+  - Conversation memory
   - PromptTemplate
   - `OllamaLLM` with streaming enabled
-- Combines relevant context chunks + user query → feeds to LLM.
+- Combines relevant context chunks + conversation history + user query → feeds to LLM
 
 ### 5. 💬 Chat Loop
-- User asks a question.
-- Background spinner starts.
-- LLM streams response using `mistral` via Ollama.
-- Response is printed word-by-word for smooth UX.
+- User asks a question
+- Background spinner starts
+- LLM streams response with document attribution
+- Response is printed word-by-word for smooth UX
+- Conversation is saved to memory for context
 
 ---
 
@@ -127,15 +128,22 @@ Make sure Ollama is running (`ollama run mistral` test works).
 python chat_pdf.py
 ```
 
-Follow prompts:
-- Choose mode: single PDF or multi-PDF search
-- For single mode: select a specific PDF
-- For multi mode: all PDFs will be loaded
-- Ask questions like:
-  - "What is this PDF about?"
-  - "Summarize this document."
-  - "What are the key takeaways?"
-  - "Compare the information in all documents about X topic."
+The chatbot:
+1. Automatically loads all PDFs in the `pdfs/` folder
+2. Remembers your conversation history
+3. Provides document sources for information
+
+Ask questions like:
+- "What is this PDF about?"
+- "Summarize this document."
+- "What are the key takeaways?"
+- "Compare the information in all documents about X topic."
+- "Remember that I'm interested in X"
+- "Based on what I asked earlier..."
+
+Special commands:
+- "exit" or "quit": Exit the program
+- "clear memory", "forget", or "clear context": Reset conversation memory
 
 ## 🔍 Multi-PDF Search
 
@@ -198,6 +206,25 @@ This helps ensure responses are grounded in your document.
 - [Ollama](https://www.ollama.com/)
 - [FAISS](https://github.com/facebookresearch/faiss)
 - [PyMuPDF](https://pymupdf.readthedocs.io/)
+
+---
+
+## 🔄 Conversation Memory
+
+The chatbot includes built-in conversation memory that:
+
+1. **Remembers previous questions and answers**
+2. **Maintains context** throughout your conversation
+3. **Handles follow-up questions** without repeating information
+4. **Stores user preferences** mentioned during the conversation
+
+This feature is useful for:
+- Asking follow-up questions
+- Building on previous responses
+- Instructing the bot to remember specific details
+- Maintaining a coherent conversation flow
+
+To clear the memory at any time, type "clear memory", "forget", or "clear context".
 
 ---
 
