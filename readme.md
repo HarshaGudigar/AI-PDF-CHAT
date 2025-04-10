@@ -4,9 +4,9 @@ You can save this as a `README.md` or just a reference text doc.
 
 ---
 
-## 🤖 PDF Chatbot (CPU-Only, RAG-based) with LangChain & Ollama
+## 🤖 AI Doc Assist: PDF Chatbot (CPU-Only, RAG-based) with LangChain & Ollama
 
-This project is a **compact**, fully **CPU-compatible** AI chatbot that allows users to chat with **PDF files**. It uses **Ollama's local LLMs** (like `mistral`) and **LangChain's RAG (Retrieval-Augmented Generation)** pipeline.
+This project is a **compact**, fully **CPU-compatible** AI chatbot that allows users to chat with **PDF files**. It uses **Ollama's local LLMs** (like `llama3`) and **LangChain's RAG (Retrieval-Augmented Generation)** pipeline.
 
 ---
 
@@ -33,17 +33,22 @@ This project is a **compact**, fully **CPU-compatible** AI chatbot that allows u
 | Embeddings      | `OllamaEmbeddings` (CPU)|
 | Vector Store    | `FAISS` (in-memory + pickled cache) |
 | Text Splitter   | `RecursiveCharacterTextSplitter` |
-| LLM             | `mistral` via `OllamaLLM` |
+| LLM             | `llama3` via `OllamaLLM` |
 | RAG Chain       | LangChain `RunnableMap` |
 | Caching         | File-based (txt + faiss `.pkl`) |
-| Interaction     | CLI with streaming & spinner |
+| Web Interface   | `Gradio` with responsive UI |
+| Interaction     | CLI with streaming & spinner or Web UI |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-chat_pdf.py             # Main chatbot script
+chat_pdf.py             # Console chatbot script
+chat_pdf_web.py         # Web interface script
+setup.py                # Package setup for pip install
+install.bat             # Windows installation script
+install.sh              # Unix/macOS installation script
 pdfs/                   # Put your PDFs here
  └── your_file.pdf
 cache/                  # Auto-generated text + vector cache
@@ -86,7 +91,21 @@ cache/                  # Auto-generated text + vector cache
 
 ## ⚙️ Setup Instructions
 
-### 1. 🐍 Create and activate virtual environment
+### Option 1: Quick Install Scripts
+
+For Windows:
+```bash
+install.bat
+```
+
+For Unix/macOS:
+```bash
+bash install.sh
+```
+
+### Option 2: Manual Setup
+
+#### 1. 🐍 Create and activate virtual environment
 
 ```bash
 # Create virtual environment
@@ -103,23 +122,27 @@ source venv/Scripts/activate
 source venv/bin/activate
 ```
 
-### 2. 📦 Install dependencies
+#### 2. 📦 Install dependencies
 
 ```bash
-pip install langchain langchain-core langchain-community langchain-ollama langchain-text-splitters pymupdf faiss-cpu
+pip install -e .
+```
+Or manually:
+```bash
+pip install langchain langchain-core langchain-community langchain-ollama langchain-text-splitters pymupdf faiss-cpu gradio
 ```
 
-### 3. 📥 Install and run Ollama
+#### 3. 📥 Install and run Ollama
 
 Install Ollama: [https://ollama.com/download](https://ollama.com/download)
 
-Pull the model:
+Pull the llama3 model:
 
 ```bash
-ollama pull mistral
+ollama pull llama3
 ```
 
-Make sure Ollama is running (`ollama run mistral` test works).
+Make sure Ollama is running before starting the application.
 
 ---
 
@@ -143,10 +166,15 @@ python chat_pdf_web.py --web
 ```
 
 The web interface offers:
-1. User-friendly chat UI
-2. PDF upload through drag-and-drop
-3. Document management
-4. Conversation history visualization
+1. **Modern Chat UI** with conversation history visualization
+2. **Easy PDF upload** through drag-and-drop or file selection
+3. **Document management** with real-time updates of loaded PDFs
+4. **Clear conversation** button to reset memory
+5. **Error handling** for missing PDFs or Ollama connection issues
+
+The web interface has two main sections:
+- **Left side**: PDF management area where you can upload documents and see what's loaded
+- **Right side**: Chat area where you can ask questions about your PDFs
 
 ### Example Questions
 
@@ -208,13 +236,17 @@ This helps ensure responses are grounded in your document.
 
 ---
 
-## 🛠️ Future Enhancements (Planned)
+## 🛠️ Future Enhancements
 
-- ✅ Add Streamlit/Gradio frontend
+- ✅ Add Gradio web interface
 - ✅ Upload and chat with multiple PDFs at once
+- ✅ Drag-and-drop PDF upload
+- 🔄 Improved PDF text extraction with table support
+- 🔄 Support for more document types (DOCX, TXT, etc.)
 - 🔒 Per-user session memory
 - 🌐 Export Q&A as JSON/Markdown
-- 📥 CLI/GUI drag-and-drop for PDFs
+- 📊 Visualization of document relationships
+- 🔍 Advanced search filters
 
 ---
 

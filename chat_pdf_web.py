@@ -436,21 +436,9 @@ def web_ui():
             gr.Markdown(f"### ⚠️ Warning\n{load_result}")
         
         with gr.Row():
-            with gr.Column(scale=2):
-                # Chat interface
-                chatbot = gr.Chatbot(height=500, value=chat_history)
-                msg = gr.Textbox(
-                    placeholder="Ask a question about your PDFs...",
-                    container=False,
-                    scale=7,
-                )
-                with gr.Row():
-                    submit = gr.Button("Send", variant="primary", scale=1)
-                    clear = gr.Button("Clear Chat", scale=1)
-                
             with gr.Column(scale=1):
-                # PDF management
-                gr.Markdown("### 📄 Upload PDFs")
+                # PDF management - now on the left
+               
                 
                 # Single file upload component that supports both drag & drop and click
                 file_component = gr.File(
@@ -469,6 +457,18 @@ def web_ui():
                     max_lines=20,
                     interactive=False
                 )
+            
+            with gr.Column(scale=2):
+                # Chat interface - now on the right
+                chatbot = gr.Chatbot(height=500, value=chat_history)
+                msg = gr.Textbox(
+                    placeholder="Ask a question about your PDFs...",
+                    container=False,
+                    scale=7,
+                )
+                with gr.Row():
+                    submit = gr.Button("Send", variant="primary", scale=1)
+                    clear = gr.Button("Clear Chat", scale=1)
                 
         # Connect file upload component
         file_component.change(
