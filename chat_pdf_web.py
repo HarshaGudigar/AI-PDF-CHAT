@@ -22,7 +22,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 vector_stores = []
 memory = None
 rag_chain = None
-chat_history = []
+chat_history = []  # This will remain a list of tuples (user_msg, bot_msg)
 
 def extract_text(pdf_path, cache_path):
     if os.path.exists(cache_path):
@@ -73,7 +73,8 @@ def combine_retrievers(vector_stores):
     def retrieve_from_all(query):
         all_docs = []
         for i, retriever in enumerate(retrievers):
-            docs = retriever.get_relevant_documents(query)
+            # Use the newer 'invoke' method instead of the deprecated 'get_relevant_documents'
+            docs = retriever.invoke(query)
             for doc in docs:
                 if not hasattr(doc, "metadata") or doc.metadata is None:
                     doc.metadata = {}
@@ -268,16 +269,12 @@ def process_question(question):
         answer = response.content if hasattr(response, "content") else str(response)
         if remember_info:
             answer = remember_info + answer
-            
-        # Update chat history for Gradio
-        chat_history.append((question, answer))
         
         return answer
     
     except Exception as e:
         error_msg = f"⚠️ Error processing question: {str(e)}"
         print(error_msg)
-        chat_history.append((question, error_msg))
         return error_msg
 
 def console_chat():
@@ -461,7 +458,8 @@ def web_ui():
                 # Chat interface - on the right
                 gr.Markdown("### 💬 Chat with Documents")
                 
-                chatbot = gr.Chatbot(height=450, value=chat_history)
+                # Simple chatbot component without any special parameters
+                chatbot = gr.Chatbot(height=450)
                 
                 with gr.Row():
                     msg = gr.Textbox(
@@ -488,13 +486,17 @@ def web_ui():
             
         reload_btn.click(reload_docs, outputs=doc_list)
         
-        # Handle chat interactions
+        # Handle chat interactions - simplified for compatibility
         def respond(message, chat_history):
-            if message.strip() == "":
+            if not message.strip():
                 return "", chat_history
-            
+                
+            # Process the question and get the answer
             answer = process_question(message)
+            
+            # Format the chat history the way Gradio expects it
             chat_history.append((message, answer))
+            
             return "", chat_history
             
         msg.submit(respond, [msg, chatbot], [msg, chatbot])
@@ -505,7 +507,7 @@ def web_ui():
             global chat_history
             memory.clear()
             chat_history = []
-            return []
+            return None
             
         clear.click(clear_chat, outputs=chatbot)
         
