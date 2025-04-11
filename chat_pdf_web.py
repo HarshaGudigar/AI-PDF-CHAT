@@ -428,7 +428,8 @@ def web_ui():
     # Initial load of documents
     load_result = load_documents()
     
-    with gr.Blocks(title="AI Doc Assist", theme=gr.themes.Soft()) as demo:
+    # Use a basic theme that works across Gradio versions
+    with gr.Blocks(title="AI Doc Assist") as demo:
         gr.Markdown("# 📚 AI Doc Assist")
         gr.Markdown("Chat with your PDF documents using AI. Upload PDFs and ask questions!")
 
@@ -437,39 +438,42 @@ def web_ui():
         
         with gr.Row():
             with gr.Column(scale=1):
-                # PDF management - now on the left
-               
+                # PDF management - on the left
+                gr.Markdown("### 📄 Document Management")
                 
-                # Single file upload component that supports both drag & drop and click
+                # Simple file upload component
                 file_component = gr.File(
                     label="Drag & Drop PDFs here (or click to upload)",
                     file_types=[".pdf"],
-                    file_count="multiple",
-                    type="binary"
+                    file_count="multiple"
                 )
                 
-                upload_output = gr.Textbox(label="Upload Results")
+                upload_output = gr.Textbox(label="Upload Results", lines=2)
                 reload_btn = gr.Button("Reload PDFs")
+                
                 doc_list = gr.Textbox(
                     label="Available Documents", 
                     value="\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded", 
-                    lines=10, 
-                    max_lines=20,
-                    interactive=False
+                    lines=10
                 )
             
             with gr.Column(scale=2):
-                # Chat interface - now on the right
-                chatbot = gr.Chatbot(height=500, value=chat_history)
-                msg = gr.Textbox(
-                    placeholder="Ask a question about your PDFs...",
-                    container=False,
-                    scale=7,
-                )
-                with gr.Row():
-                    submit = gr.Button("Send", variant="primary", scale=1)
-                    clear = gr.Button("Clear Chat", scale=1)
+                # Chat interface - on the right
+                gr.Markdown("### 💬 Chat with Documents")
                 
+                chatbot = gr.Chatbot(height=450, value=chat_history)
+                
+                with gr.Row():
+                    msg = gr.Textbox(
+                        placeholder="Ask a question about your PDFs...",
+                        container=False,
+                        scale=7
+                    )
+                    submit = gr.Button("Send")
+                
+                with gr.Row():
+                    clear = gr.Button("Clear Chat History")
+        
         # Connect file upload component
         file_component.change(
             simple_upload_handler,
