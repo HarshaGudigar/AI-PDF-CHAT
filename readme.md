@@ -47,8 +47,6 @@ This project is a **compact**, fully **CPU-compatible** AI chatbot that allows u
 chat_pdf.py             # Console chatbot script
 chat_pdf_web.py         # Web interface script
 setup.py                # Package setup for pip install
-install.bat             # Windows installation script
-install.sh              # Unix/macOS installation script
 pdfs/                   # Put your PDFs here
  └── your_file.pdf
 cache/                  # Auto-generated text + vector cache
@@ -91,19 +89,7 @@ cache/                  # Auto-generated text + vector cache
 
 ## ⚙️ Setup Instructions
 
-### Option 1: Quick Install Scripts
-
-For Windows:
-```bash
-install.bat
-```
-
-For Unix/macOS:
-```bash
-bash install.sh
-```
-
-### Option 2: Manual Setup
+### Manual Setup
 
 #### 1. 🐍 Create and activate virtual environment
 
