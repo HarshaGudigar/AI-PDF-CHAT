@@ -23,6 +23,7 @@ vector_stores = []
 memory = None
 rag_chain = None
 chat_history = []  # This will remain a list of tuples (user_msg, bot_msg)
+ENABLE_MEMORY = False  # Toggle for memory feature
 
 # Enable more verbose logging
 def log_info(message):
@@ -114,6 +115,8 @@ def combine_retrievers(vector_stores):
 
 def setup_conversation_memory():
     """Initialize conversation memory to store chat history."""
+    if not ENABLE_MEMORY:
+        return None
     return ConversationBufferMemory(
         memory_key="chat_history", 
         return_messages=True,
@@ -124,18 +127,21 @@ def setup_rag_chain(vector_stores, memory):
     retriever = combine_retrievers(vector_stores)
 
     # Improved prompt template that handles personal information and PDF content
-    prompt = PromptTemplate.from_template(
-        "You are a helpful assistant answering questions about PDF files and maintaining a conversation with the user.\n"
-        "If the question is about metadata such as number of pages or file size, "
+    prompt_template = (
+        "You are a helpful assistant answering questions about PDF files"
+        + (" and maintaining a conversation with the user.\n" if ENABLE_MEMORY else ".\n")
+        + "If the question is about metadata such as number of pages or file size, "
         "answer with the information for all relevant documents.\n"
         "For questions about the documents, answer concisely based on the document content.\n"
-        "For personal questions or information the user has shared with you previously, use the chat history to respond appropriately.\n"
-        "Always include the document source name (filename) for any PDF information you provide.\n\n"
+        + ("For personal questions or information the user has shared with you previously, use the chat history to respond appropriately.\n" if ENABLE_MEMORY else "")
+        + "Always include the document source name (filename) for any PDF information you provide.\n\n"
         "Document Context:\n{context}\n\n"
-        + "Chat History:\n{chat_history}\n\n" +
-        "Question: {question}\n\n"
+        + ("Chat History:\n{chat_history}\n\n" if ENABLE_MEMORY else "")
+        + "Question: {question}\n\n"
         "Answer:"
     )
+
+    prompt = PromptTemplate.from_template(prompt_template)
 
     llm = OllamaLLM(model="llama3", temperature=0, stream=True)
 
@@ -159,6 +165,8 @@ def setup_rag_chain(vector_stores, memory):
     
     # Format chat history for the prompt
     def get_chat_history(inputs):
+        if not ENABLE_MEMORY or not memory:
+            return ""
         memory_data = memory.load_memory_variables({})
         history = memory_data.get("chat_history", [])
         formatted_history = []
@@ -256,24 +264,25 @@ def process_question(question):
         if not vector_stores:
             return "Please load documents first."
             
-        if question.lower() in ["clear memory", "forget", "clear context"]:
+        if ENABLE_MEMORY and question.lower() in ["clear memory", "forget", "clear context"]:
             memory.clear()
             chat_history = []
             return "🧹 Memory cleared! Previous context has been forgotten."
         
         # Pre-process to extract any special directives
         remember_info = ""
-        if question.lower().startswith(("remember ", "note that ")):
+        if ENABLE_MEMORY and question.lower().startswith(("remember ", "note that ")):
             remember_info = "I'll remember that. "
         
         # For memory-enabled chains, we pass a dict with the question
         response = rag_chain.invoke({"question": question})
         
-        # Save the interaction to memory
-        memory.save_context(
-            {"question": question}, 
-            {"answer": response.content if hasattr(response, "content") else str(response)}
-        )
+        # Save the interaction to memory if enabled
+        if ENABLE_MEMORY and memory:
+            memory.save_context(
+                {"question": question}, 
+                {"answer": response.content if hasattr(response, "content") else str(response)}
+            )
         
         # Add the remember prefix to the response if needed
         answer = response.content if hasattr(response, "content") else str(response)
@@ -507,6 +516,13 @@ def web_ui():
                 # PDF management - on the left
                 gr.Markdown("### 📄 Document Management")
                 
+                # Memory toggle
+                memory_toggle = gr.Checkbox(
+                    label="Enable Conversation Memory",
+                    value=ENABLE_MEMORY,
+                    info="When enabled, the AI will remember previous conversations and context"
+                )
+                
                 # Simple file upload component
                 file_component = gr.File(
                     label="Drag & Drop PDFs here (or click to upload)",
@@ -547,6 +563,21 @@ def web_ui():
             simple_upload_handler,
             inputs=[file_component],
             outputs=[upload_output, doc_list]
+        )
+        
+        # Handle memory toggle
+        def toggle_memory(enable):
+            global ENABLE_MEMORY
+            ENABLE_MEMORY = enable
+            if enable:
+                return "Memory feature enabled. The AI will now remember previous conversations."
+            else:
+                return "Memory feature disabled. Each question will be treated independently."
+                
+        memory_toggle.change(
+            toggle_memory,
+            inputs=[memory_toggle],
+            outputs=[upload_output]
         )
         
         # Handle reload button
