@@ -427,7 +427,7 @@ def web_ui():
     
     # Use a basic theme that works across Gradio versions
     with gr.Blocks(title="AI Doc Assist") as demo:
-        gr.Markdown("# 📚 AI Doc Assist")
+        gr.Markdown("# 🤖 AI Doc Assist")
         gr.Markdown("Chat with your PDF documents using AI. Upload PDFs and ask questions!")
 
         if "Error" in load_result:
