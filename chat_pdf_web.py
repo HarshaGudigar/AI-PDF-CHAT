@@ -551,8 +551,8 @@ def web_ui() -> gr.Blocks:
     with gr.Blocks(title="AI Doc Assist", css="""
         .gradio-container {height: 100vh !important;}
         .chatbot-container {height: 70vh !important;}
-        .file-upload {height: 20vh !important;}
-        .document-list {height: 45vh !important;}
+        .file-upload {height: 30vh !important;}
+        .document-list {height: 40vh !important;}
         .input-box {height: 5vh !important;}
         .send-button {height: 5vh !important; display: flex !important; align-items: center !important;}
     """) as demo:
