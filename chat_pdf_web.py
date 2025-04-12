@@ -46,7 +46,7 @@ def extract_text(pdf_path, cache_path):
     return text
 
 def build_vector_store(text, faiss_cache, metadata):
-    embeddings = OllamaEmbeddings(model="llama3")
+    embeddings = OllamaEmbeddings(model="nomic-embed-text")
 
     if os.path.exists(faiss_cache):
         print("🔁 Loading cached FAISS index...")
@@ -143,7 +143,7 @@ def setup_rag_chain(vector_stores, memory):
 
     prompt = PromptTemplate.from_template(prompt_template)
 
-    llm = OllamaLLM(model="llama3", temperature=0, stream=True)
+    llm = OllamaLLM(model="llama3.2", temperature=0, stream=True)
 
     def format_docs(docs):
         # Handle metadata documents specially
@@ -473,7 +473,6 @@ def simple_upload_handler(files):
         log_info(f"Files in {PDF_DIR} after upload: {pdf_files}")
         
         # Force flush any file writes to disk
-        import time
         time.sleep(0.5)  # Short delay to ensure file operations complete
         
         # Reload documents after successful upload
@@ -516,13 +515,6 @@ def web_ui():
                 # PDF management - on the left
                 gr.Markdown("### 📄 Document Management")
                 
-                # Memory toggle
-                memory_toggle = gr.Checkbox(
-                    label="Enable Conversation Memory",
-                    value=ENABLE_MEMORY,
-                    info="When enabled, the AI will remember previous conversations and context"
-                )
-                
                 # Simple file upload component
                 file_component = gr.File(
                     label="Drag & Drop PDFs here (or click to upload)",
@@ -563,21 +555,6 @@ def web_ui():
             simple_upload_handler,
             inputs=[file_component],
             outputs=[upload_output, doc_list]
-        )
-        
-        # Handle memory toggle
-        def toggle_memory(enable):
-            global ENABLE_MEMORY
-            ENABLE_MEMORY = enable
-            if enable:
-                return "Memory feature enabled. The AI will now remember previous conversations."
-            else:
-                return "Memory feature disabled. Each question will be treated independently."
-                
-        memory_toggle.change(
-            toggle_memory,
-            inputs=[memory_toggle],
-            outputs=[upload_output]
         )
         
         # Handle reload button
