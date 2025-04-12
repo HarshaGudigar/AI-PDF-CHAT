@@ -354,7 +354,7 @@ def simple_upload_handler(files):
     """Safely handle uploaded files from both UploadButton and File components."""
     try:
         if files is None:
-            return "No files uploaded", "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
         
         # Convert to list if it's not already
         if not isinstance(files, list):
@@ -453,7 +453,7 @@ def simple_upload_handler(files):
                 if os.path.exists(output_path):
                     file_size = os.path.getsize(output_path)
                     log_info(f"Verified file saved: {output_path} ({file_size} bytes)")
-                    results.append(f"Uploaded: {file_name} ({file_size} bytes)")
+                    results.append(f"{file_name}")
                 else:
                     error = f"File not found after saving: {output_path}"
                     log_error(error)
@@ -466,7 +466,7 @@ def simple_upload_handler(files):
         
         if not results:
             log_info("No valid files uploaded")
-            return "No valid files uploaded", "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
         
         # List all files in PDF_DIR after upload
         pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith('.pdf')]
@@ -478,18 +478,16 @@ def simple_upload_handler(files):
         # Reload documents after successful upload
         try:
             load_result = load_documents()
-            doc_titles = "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
-            log_info(f"Documents loaded after upload: {doc_titles}")
-            return "\n".join(results), doc_titles
+            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
         except Exception as e:
             error_msg = f"Error reloading documents: {str(e)}"
             log_error(error_msg)
-            return "\n".join(results + [error_msg]), "Error loading documents"
+            return "Error loading documents"
             
     except Exception as e:
         error_msg = f"Error in upload handler: {str(e)}"
         log_error(error_msg)
-        return error_msg, "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+        return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
 
 def web_ui():
     """Run the Gradio web interface."""
@@ -510,7 +508,7 @@ def web_ui():
         if "Error" in load_result:
             gr.Markdown(f"### ⚠️ Warning\n{load_result}")
         
-        with gr.Row():
+        with gr.Row(equal_height=True):
             with gr.Column(scale=1):
                 # PDF management - on the left
                 gr.Markdown("### 📄 Document Management")
@@ -523,7 +521,6 @@ def web_ui():
                     type="binary"  # Ensure binary mode for PDF files
                 )
                 
-                upload_output = gr.Textbox(label="Upload Results", lines=2)
                 reload_btn = gr.Button("Reload PDFs")
                 
                 doc_list = gr.Textbox(
@@ -536,25 +533,28 @@ def web_ui():
                 # Chat interface - on the right
                 gr.Markdown("### 💬 Chat with Documents")
                 
-                # Use standard chat interface without specifying type
-                chatbot = gr.Chatbot(height=450)
+                chatbot = gr.Chatbot(
+                    height="65vh",  # Dynamic height based on viewport
+                    container=True,
+                    elem_classes="chatbot-container"
+                )
                 
                 with gr.Row():
                     msg = gr.Textbox(
                         placeholder="Ask a question about your PDFs...",
                         container=False,
-                        scale=7
+                        scale=7,
+                        show_label=False
                     )
-                    submit = gr.Button("Send")
+                    submit = gr.Button("Send", scale=1)
                 
-                with gr.Row():
-                    clear = gr.Button("Clear Chat History")
+                clear = gr.Button("Clear Chat History")
         
         # Connect file upload component - using upload event rather than change
         file_component.upload(
             simple_upload_handler,
             inputs=[file_component],
-            outputs=[upload_output, doc_list]
+            outputs=[doc_list]
         )
         
         # Handle reload button
