@@ -547,8 +547,6 @@ def web_ui():
                         show_label=False
                     )
                     submit = gr.Button("Send", scale=1)
-                
-                clear = gr.Button("Clear Chat History")
         
         # Connect file upload component - using upload event rather than change
         file_component.upload(
@@ -585,15 +583,6 @@ def web_ui():
             
         msg.submit(respond, [msg, chatbot], [msg, chatbot])
         submit.click(respond, [msg, chatbot], [msg, chatbot])
-        
-        # Handle clear button
-        def clear_chat():
-            global chat_history
-            memory.clear()
-            chat_history = []
-            return None
-            
-        clear.click(clear_chat, outputs=chatbot)
         
     # Configure Gradio for stateful operation
     demo.queue()
