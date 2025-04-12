@@ -1,6 +1,17 @@
-import os, time, sys, threading, pickle, fitz, signal, gradio as gr
+# Standard library imports
+import os
+import time
+import sys
+import threading
+import pickle
+import signal
 from pathlib import Path
+from typing import List, Dict, Any, Optional, Union
+from dataclasses import dataclass
 
+# Third-party imports
+import fitz
+import gradio as gr
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,187 +23,229 @@ from langchain_core.documents import Document
 from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import HumanMessage, AIMessage
 
-
+# Constants
 PDF_DIR = "pdfs"
 CACHE_DIR = "cache"
+DEFAULT_MODEL = "llama3"
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+ENABLE_MEMORY = False
+
+@dataclass
+class VectorStore:
+    vector_store: Any
+    metadata: Dict[str, Any]
+
+# Global state
+vector_stores: List[VectorStore] = []
+memory: Optional[ConversationBufferMemory] = None
+rag_chain: Optional[Any] = None
+chat_history: List[tuple] = []
+
+# Ensure directories exist
 os.makedirs(PDF_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Global variables to store state
-vector_stores = []
-memory = None
-rag_chain = None
-chat_history = []  # This will remain a list of tuples (user_msg, bot_msg)
-ENABLE_MEMORY = False  # Toggle for memory feature
-
-# Enable more verbose logging
-def log_info(message):
+# Logging functions
+def log_info(message: str) -> None:
+    """Log an informational message."""
     print(f"[INFO] {message}")
 
-def log_error(message):
+def log_error(message: str) -> None:
+    """Log an error message."""
     print(f"[ERROR] {message}")
 
-def log_debug(message):
+def log_debug(message: str) -> None:
+    """Log a debug message."""
     print(f"[DEBUG] {message}")
 
-def extract_text(pdf_path, cache_path):
-    if os.path.exists(cache_path):
-        print(f"📄 Using cached text for: {os.path.basename(pdf_path)}")
-        return open(cache_path, "r", encoding="utf-8").read()
-    print(f"📄 Extracting text from {os.path.basename(pdf_path)}...")
-    text = "\n".join([page.get_text() for page in fitz.open(pdf_path)])
-    with open(cache_path, "w", encoding="utf-8") as f:
-        f.write(text)
-    return text
-
-def build_vector_store(text, faiss_cache, metadata):
-    embeddings = OllamaEmbeddings(model="nomic-embed-text")
-
-    if os.path.exists(faiss_cache):
-        print("🔁 Loading cached FAISS index...")
-        # When loading from cache, we need to reconstruct the metadata
-        vector_store = FAISS.load_local(faiss_cache, embeddings, allow_dangerous_deserialization=True)
-        print(f"📊 Metadata for {metadata.get('title', 'Unknown')}: {metadata}")
-        return vector_store
-
-    print("🧠 Embedding text...")
-    chunks = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_text(text)
-    
-    # Add document title to each chunk's metadata
-    docs_with_metadata = []
-    for chunk in chunks:
-        docs_with_metadata.append((chunk, {"source": metadata.get("title", "Unknown")}, ))
-    
-    # Add metadata as a special chunk
-    metadata_chunk = "\n".join(f"{k}: {v}" for k, v in metadata.items())
-    docs_with_metadata.insert(0, (f"[METADATA]\n{metadata_chunk}", {"source": metadata.get("title", "Unknown"), "is_metadata": True}, ))
-    
-    print(f"📊 Added metadata for {metadata.get('title', 'Unknown')}: {metadata}")
-    
-    vector_store = FAISS.from_texts([doc[0] for doc in docs_with_metadata], embeddings, metadatas=[doc[1] for doc in docs_with_metadata])
-    vector_store.save_local(faiss_cache)
-    return vector_store
-
-def combine_retrievers(vector_stores):
-    """Combine results from multiple retrievers."""
-    llm = OllamaLLM(model="llama3", temperature=0)
-    
-    retrievers = []
-    for vs in vector_stores:
-        retrievers.append(vs["vector_store"].as_retriever(search_kwargs={"k": 3}))
-    
-    def retrieve_from_all(query):
-        all_docs = []
-        for i, retriever in enumerate(retrievers):
-            # Use the newer 'invoke' method instead of the deprecated 'get_relevant_documents'
-            docs = retriever.invoke(query)
-            for doc in docs:
-                if not hasattr(doc, "metadata") or doc.metadata is None:
-                    doc.metadata = {}
-                # Ensure source is set, using the vector store's metadata
-                doc.metadata["source"] = vector_stores[i]["metadata"]["title"]
-                
-                # Check if this is a metadata document
-                if "[METADATA]" in doc.page_content:
-                    doc.metadata["is_metadata"] = True
-                    
-            all_docs.extend(docs)
-            
-            # Add an empty document with just the metadata if none was found
-            found_metadata = any(getattr(doc.metadata, "is_metadata", False) for doc in docs)
-            if not found_metadata:
-                metadata_string = "\n".join(f"{k}: {v}" for k, v in vector_stores[i]["metadata"].items())
-                metadata_doc = Document(
-                    page_content=f"[METADATA]\n{metadata_string}",
-                    metadata={"source": vector_stores[i]["metadata"]["title"], "is_metadata": True}
-                )
-                all_docs.append(metadata_doc)
+def extract_text(pdf_path: str, cache_path: str) -> str:
+    """Extract text from PDF and cache it for future use."""
+    try:
+        if os.path.exists(cache_path):
+            log_info(f"Using cached text for: {os.path.basename(pdf_path)}")
+            return open(cache_path, "r", encoding="utf-8").read()
         
-        # Sort by relevance (if available) or any other criterion
-        return all_docs
-    
-    return retrieve_from_all
+        log_info(f"Extracting text from {os.path.basename(pdf_path)}...")
+        text = "\n".join([page.get_text() for page in fitz.open(pdf_path)])
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return text
+    except Exception as e:
+        log_error(f"Error extracting text from {pdf_path}: {str(e)}")
+        raise
 
-def setup_conversation_memory():
+def build_vector_store(text: str, faiss_cache: str, metadata: Dict[str, Any]) -> Any:
+    """Build or load a FAISS vector store for the given text."""
+    try:
+        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+
+        if os.path.exists(faiss_cache):
+            log_info("Loading cached FAISS index...")
+            vector_store = FAISS.load_local(faiss_cache, embeddings, allow_dangerous_deserialization=True)
+            log_info(f"Metadata for {metadata.get('title', 'Unknown')}: {metadata}")
+            return vector_store
+
+        log_info("Embedding text...")
+        chunks = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP
+        ).split_text(text)
+        
+        # Add document title to each chunk's metadata
+        docs_with_metadata = []
+        for chunk in chunks:
+            docs_with_metadata.append((chunk, {"source": metadata.get("title", "Unknown")}))
+        
+        # Add metadata as a special chunk
+        metadata_chunk = "\n".join(f"{k}: {v}" for k, v in metadata.items())
+        docs_with_metadata.insert(0, (
+            f"[METADATA]\n{metadata_chunk}",
+            {"source": metadata.get("title", "Unknown"), "is_metadata": True}
+        ))
+        
+        log_info(f"Added metadata for {metadata.get('title', 'Unknown')}: {metadata}")
+        
+        vector_store = FAISS.from_texts(
+            [doc[0] for doc in docs_with_metadata],
+            embeddings,
+            metadatas=[doc[1] for doc in docs_with_metadata]
+        )
+        vector_store.save_local(faiss_cache)
+        return vector_store
+    except Exception as e:
+        log_error(f"Error building vector store: {str(e)}")
+        raise
+
+def combine_retrievers(vector_stores: List[VectorStore]) -> callable:
+    """Combine results from multiple retrievers."""
+    try:
+        llm = OllamaLLM(model=DEFAULT_MODEL, temperature=0)
+        
+        retrievers = []
+        for vs in vector_stores:
+            retrievers.append(vs.vector_store.as_retriever(search_kwargs={"k": 3}))
+        
+        def retrieve_from_all(query: str) -> List[Document]:
+            all_docs = []
+            for i, retriever in enumerate(retrievers):
+                docs = retriever.invoke(query)
+                for doc in docs:
+                    if not hasattr(doc, "metadata") or doc.metadata is None:
+                        doc.metadata = {}
+                    doc.metadata["source"] = vector_stores[i].metadata["title"]
+                    
+                    if "[METADATA]" in doc.page_content:
+                        doc.metadata["is_metadata"] = True
+                        
+                all_docs.extend(docs)
+                
+                # Add metadata document if none was found
+                found_metadata = any(getattr(doc.metadata, "is_metadata", False) for doc in docs)
+                if not found_metadata:
+                    metadata_string = "\n".join(f"{k}: {v}" for k, v in vector_stores[i].metadata.items())
+                    metadata_doc = Document(
+                        page_content=f"[METADATA]\n{metadata_string}",
+                        metadata={"source": vector_stores[i].metadata["title"], "is_metadata": True}
+                    )
+                    all_docs.append(metadata_doc)
+            
+            return all_docs
+        
+        return retrieve_from_all
+    except Exception as e:
+        log_error(f"Error combining retrievers: {str(e)}")
+        raise
+
+def setup_conversation_memory() -> Optional[ConversationBufferMemory]:
     """Initialize conversation memory to store chat history."""
     if not ENABLE_MEMORY:
         return None
-    return ConversationBufferMemory(
-        memory_key="chat_history", 
-        return_messages=True,
-        output_key="answer"
-    )
+    try:
+        return ConversationBufferMemory(
+            memory_key="chat_history", 
+            return_messages=True,
+            output_key="answer"
+        )
+    except Exception as e:
+        log_error(f"Error setting up conversation memory: {str(e)}")
+        return None
 
-def setup_rag_chain(vector_stores, memory):
-    retriever = combine_retrievers(vector_stores)
+def setup_rag_chain(vector_stores: List[VectorStore], memory: Optional[ConversationBufferMemory]) -> Any:
+    """Set up the RAG chain for document processing."""
+    try:
+        retriever = combine_retrievers(vector_stores)
 
-    # Improved prompt template that handles personal information and PDF content
-    prompt_template = (
-        "You are a helpful assistant answering questions about PDF files"
-        + (" and maintaining a conversation with the user.\n" if ENABLE_MEMORY else ".\n")
-        + "If the question is about metadata such as number of pages or file size, "
-        "answer with the information for all relevant documents.\n"
-        "For questions about the documents, answer concisely based on the document content.\n"
-        + ("For personal questions or information the user has shared with you previously, use the chat history to respond appropriately.\n" if ENABLE_MEMORY else "")
-        + "Always include the document source name (filename) for any PDF information you provide.\n\n"
-        "Document Context:\n{context}\n\n"
-        + ("Chat History:\n{chat_history}\n\n" if ENABLE_MEMORY else "")
-        + "Question: {question}\n\n"
-        "Answer:"
-    )
+        # Improved prompt template that handles personal information and PDF content
+        prompt_template = (
+            "You are a helpful assistant answering questions about PDF files"
+            + (" and maintaining a conversation with the user.\n" if ENABLE_MEMORY else ".\n")
+            + "If the question is about metadata such as number of pages or file size, "
+            "answer with the information for all relevant documents.\n"
+            "For questions about the documents, answer concisely based on the document content.\n"
+            + ("For personal questions or information the user has shared with you previously, use the chat history to respond appropriately.\n" if ENABLE_MEMORY else "")
+            + "Always include the document source name (filename) for any PDF information you provide.\n\n"
+            "Document Context:\n{context}\n\n"
+            + ("Chat History:\n{chat_history}\n\n" if ENABLE_MEMORY else "")
+            + "Question: {question}\n\n"
+            "Answer:"
+        )
 
-    prompt = PromptTemplate.from_template(prompt_template)
+        prompt = PromptTemplate.from_template(prompt_template)
+        llm = OllamaLLM(model=DEFAULT_MODEL, temperature=0, stream=True)
 
-    llm = OllamaLLM(model="llama3.2", temperature=0, stream=True)
-
-    def format_docs(docs):
-        # Handle metadata documents specially
-        metadata_sections = []
-        content_sections = []
+        def format_docs(docs: List[Document]) -> str:
+            """Format documents for display, handling metadata specially."""
+            metadata_sections = []
+            content_sections = []
+            
+            for doc in docs:
+                if doc.page_content.startswith("[METADATA]"):
+                    metadata_txt = doc.page_content.replace("[METADATA]\n", "")
+                    metadata_sections.append(f"Document: {doc.metadata.get('source', 'Unknown')}\nMetadata: {metadata_txt}")
+                else:
+                    content_sections.append(f"Document: {doc.metadata.get('source', 'Unknown')}\nContent: {doc.page_content}")
+            
+            all_sections = metadata_sections + content_sections
+            return "\n\n".join(all_sections)
         
-        for doc in docs:
-            if doc.page_content.startswith("[METADATA]"):
-                # Parse and format metadata
-                metadata_txt = doc.page_content.replace("[METADATA]\n", "")
-                metadata_sections.append(f"Document: {doc.metadata.get('source', 'Unknown')}\nMetadata: {metadata_txt}")
-            else:
-                # Regular content
-                content_sections.append(f"Document: {doc.metadata.get('source', 'Unknown')}\nContent: {doc.page_content}")
-        
-        # First show metadata sections, then content sections
-        all_sections = metadata_sections + content_sections
-        return "\n\n".join(all_sections)
-    
-    # Format chat history for the prompt
-    def get_chat_history(inputs):
-        if not ENABLE_MEMORY or not memory:
-            return ""
-        memory_data = memory.load_memory_variables({})
-        history = memory_data.get("chat_history", [])
-        formatted_history = []
-        for message in history:
-            if isinstance(message, HumanMessage):
-                formatted_history.append(f"Human: {message.content}")
-            elif isinstance(message, AIMessage):
-                formatted_history.append(f"AI: {message.content}")
-        return "\n".join(formatted_history)
+        def get_chat_history(inputs: Dict[str, Any]) -> str:
+            """Format chat history for the prompt."""
+            if not ENABLE_MEMORY or not memory:
+                return ""
+            try:
+                memory_data = memory.load_memory_variables({})
+                history = memory_data.get("chat_history", [])
+                formatted_history = []
+                for message in history:
+                    if isinstance(message, HumanMessage):
+                        formatted_history.append(f"Human: {message.content}")
+                    elif isinstance(message, AIMessage):
+                        formatted_history.append(f"AI: {message.content}")
+                return "\n".join(formatted_history)
+            except Exception as e:
+                log_error(f"Error getting chat history: {str(e)}")
+                return ""
 
-    return (
-        {
-            "context": lambda x: format_docs(retriever(x["question"])), 
-            "question": lambda x: x["question"],
-            "chat_history": get_chat_history,
-         }
-        | prompt
-        | llm
-    )
+        return (
+            {
+                "context": lambda x: format_docs(retriever(x["question"])), 
+                "question": lambda x: x["question"],
+                "chat_history": get_chat_history,
+            }
+            | prompt
+            | llm
+        )
+    except Exception as e:
+        log_error(f"Error setting up RAG chain: {str(e)}")
+        raise
 
-def handle_sigint(sig, frame):
+def handle_sigint(sig: int, frame: Any) -> None:
     """Handle SIGINT (Ctrl+C) gracefully."""
     print("\n\n👋 Exiting gracefully. Goodbye!")
     sys.exit(0)
 
-def load_documents():
+def load_documents() -> str:
     """Load all PDF documents and prepare the RAG chain."""
     global vector_stores, memory, rag_chain
     
@@ -204,10 +257,10 @@ def load_documents():
             log_info("⚠️  No PDFs found in 'pdfs/' folder.")
             return "No PDFs found. Please upload some PDFs to get started."
         
-        # Always use conversation memory
+        # Initialize conversation memory
         memory = setup_conversation_memory()
         
-        # Always process all PDFs
+        # Process all PDFs
         log_info("📚 Found PDFs:")
         for name in pdfs:
             log_info(f" - {name}")
@@ -216,11 +269,12 @@ def load_documents():
         vector_stores = []
         
         for pdf in pdfs:
-            pdf_path = os.path.join(PDF_DIR, pdf)
-            txt_cache = os.path.join(CACHE_DIR, pdf.replace("/", "_").replace("\\", "_") + ".txt")
-            faiss_cache = os.path.join(CACHE_DIR, pdf.replace("/", "_").replace("\\", "_").replace(".pdf", "_faiss"))
-            
             try:
+                pdf_path = os.path.join(PDF_DIR, pdf)
+                txt_cache = os.path.join(CACHE_DIR, pdf.replace("/", "_").replace("\\", "_") + ".txt")
+                faiss_cache = os.path.join(CACHE_DIR, pdf.replace("/", "_").replace("\\", "_").replace(".pdf", "_faiss"))
+                
+                # Get document metadata
                 doc = fitz.open(pdf_path)
                 num_pages = len(doc)
                 file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
@@ -230,22 +284,24 @@ def load_documents():
                     "file_size_mb": f"{file_size_mb:.2f} MB"
                 }
                 
+                # Process document
                 text = extract_text(pdf_path, txt_cache)
                 vector_store = build_vector_store(text, faiss_cache, metadata)
                 
-                vector_stores.append({
-                    "vector_store": vector_store,
-                    "metadata": metadata
-                })
+                vector_stores.append(VectorStore(
+                    vector_store=vector_store,
+                    metadata=metadata
+                ))
             except Exception as doc_err:
                 log_error(f"Error processing document {pdf}: {str(doc_err)}")
         
-        # Add a special query to check metadata
+        # Create document summary
         summary = "\n📊 Document Summary:\n"
         for store in vector_stores:
-            meta = store["metadata"]
+            meta = store.metadata
             summary += f" - {meta['title']}: {meta['num_pages']} pages, {meta['file_size_mb']} size\n"
             
+        # Set up RAG chain
         rag_chain = setup_rag_chain(vector_stores, memory)
         
         return summary + "\n✅ Ready! Chat with your documents."
@@ -256,7 +312,7 @@ def load_documents():
             return f"⚠️ Error: Could not connect to Ollama. Please make sure Ollama is running.\n\nDetails: {str(e)}"
         return f"⚠️ Error loading documents: {str(e)}"
 
-def process_question(question):
+def process_question(question: str) -> str:
     """Process user questions for both CLI and web interfaces."""
     global memory, rag_chain, chat_history
     
@@ -265,7 +321,8 @@ def process_question(question):
             return "Please load documents first."
             
         if ENABLE_MEMORY and question.lower() in ["clear memory", "forget", "clear context"]:
-            memory.clear()
+            if memory:
+                memory.clear()
             chat_history = []
             return "🧹 Memory cleared! Previous context has been forgotten."
         
@@ -274,7 +331,7 @@ def process_question(question):
         if ENABLE_MEMORY and question.lower().startswith(("remember ", "note that ")):
             remember_info = "I'll remember that. "
         
-        # For memory-enabled chains, we pass a dict with the question
+        # Process question through RAG chain
         response = rag_chain.invoke({"question": question})
         
         # Save the interaction to memory if enabled
@@ -284,7 +341,7 @@ def process_question(question):
                 {"answer": response.content if hasattr(response, "content") else str(response)}
             )
         
-        # Add the remember prefix to the response if needed
+        # Format response
         answer = response.content if hasattr(response, "content") else str(response)
         if remember_info:
             answer = remember_info + answer
@@ -293,10 +350,10 @@ def process_question(question):
     
     except Exception as e:
         error_msg = f"⚠️ Error processing question: {str(e)}"
-        print(error_msg)
+        log_error(error_msg)
         return error_msg
 
-def console_chat():
+def console_chat() -> None:
     """Run the console-based chat interface."""
     # Register signal handler for Ctrl+C
     signal.signal(signal.SIGINT, handle_sigint)
@@ -317,8 +374,8 @@ def console_chat():
                 
             stop_event = threading.Event()
             
-            # Define spinner function
-            def spinner_func():
+            def spinner_func() -> None:
+                """Display a spinning indicator while processing."""
                 spin_chars = ['|', '/', '-', '\\']
                 i = 0
                 while not stop_event.is_set():
@@ -346,15 +403,14 @@ def console_chat():
             print()
             
         except KeyboardInterrupt:
-            # This is a backup in case the signal handler doesn't catch it
             print("\n\n👋 Exiting gracefully. Goodbye!")
             break
 
-def simple_upload_handler(files):
+def simple_upload_handler(files: Union[List[Any], Any, None]) -> str:
     """Safely handle uploaded files from both UploadButton and File components."""
     try:
         if files is None:
-            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+            return "\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else ""
         
         # Convert to list if it's not already
         if not isinstance(files, list):
@@ -368,38 +424,34 @@ def simple_upload_handler(files):
                 continue
                 
             try:
-                # Get the file name - different file objects might provide it differently
+                # Get the file name
                 if hasattr(file_obj, "name"):
                     file_name = os.path.basename(file_obj.name)
                 elif hasattr(file_obj, "orig_name"):
                     file_name = file_obj.orig_name
                 else:
-                    # Generate a unique name if we can't determine it
                     file_name = f"uploaded_{int(time.time())}.pdf"
                 
-                # Create output path - saving directly to PDF_DIR, not UPLOAD_DIR
+                # Create output path
                 output_path = os.path.join(PDF_DIR, file_name)
                 abs_output_path = os.path.abspath(output_path)
                 log_info(f"Saving to: {abs_output_path}")
                 
-                # Handle file content based on the type of object we received
+                # Handle file content based on type
                 success = False
                 
-                # For binary data handling
-                if isinstance(file_obj, bytes) or isinstance(file_obj, bytearray):
+                if isinstance(file_obj, (bytes, bytearray)):
                     with open(output_path, "wb") as f:
                         f.write(file_obj)
                     log_info(f"Wrote bytes content for {file_name} ({len(file_obj)} bytes)")
                     success = True
                     
-                # For file-like objects with read method
                 elif hasattr(file_obj, "read"):
                     try:
                         content = file_obj.read()
                         with open(output_path, "wb") as f:
                             f.write(content)
                         
-                        # Reset file pointer if possible
                         if hasattr(file_obj, "seek"):
                             try:
                                 file_obj.seek(0)
@@ -411,16 +463,13 @@ def simple_upload_handler(files):
                     except Exception as read_err:
                         log_error(f"Error reading file: {str(read_err)}")
                     finally:
-                        # Try to close the file if it has a close method
                         if hasattr(file_obj, "close"):
                             try:
                                 file_obj.close()
                             except:
                                 pass
                 
-                # For string paths
                 elif isinstance(file_obj, str):
-                    # Path to a temporary file
                     try:
                         import shutil
                         shutil.copy2(file_obj, output_path)
@@ -429,7 +478,6 @@ def simple_upload_handler(files):
                     except Exception as copy_err:
                         log_error(f"Error copying file: {str(copy_err)}")
                 
-                # For objects with path attribute
                 elif hasattr(file_obj, "path") and file_obj.path:
                     try:
                         import shutil
@@ -439,7 +487,6 @@ def simple_upload_handler(files):
                     except Exception as path_err:
                         log_error(f"Error copying from path: {str(path_err)}")
                 
-                # Try raw data as last resort
                 elif not success:
                     try:
                         with open(output_path, "wb") as f:
@@ -466,19 +513,19 @@ def simple_upload_handler(files):
         
         if not results:
             log_info("No valid files uploaded")
-            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+            return "\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else ""
         
         # List all files in PDF_DIR after upload
         pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith('.pdf')]
         log_info(f"Files in {PDF_DIR} after upload: {pdf_files}")
         
         # Force flush any file writes to disk
-        time.sleep(0.5)  # Short delay to ensure file operations complete
+        time.sleep(0.5)
         
         # Reload documents after successful upload
         try:
             load_result = load_documents()
-            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
+            return "\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
         except Exception as e:
             error_msg = f"Error reloading documents: {str(e)}"
             log_error(error_msg)
@@ -487,9 +534,9 @@ def simple_upload_handler(files):
     except Exception as e:
         error_msg = f"Error in upload handler: {str(e)}"
         log_error(error_msg)
-        return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else ""
+        return "\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else ""
 
-def web_ui():
+def web_ui() -> gr.Blocks:
     """Run the Gradio web interface."""
     global chat_history
     
@@ -501,15 +548,21 @@ def web_ui():
     log_info(f"Files in {PDF_DIR} at startup: {pdf_files}")
     
     # Use a basic theme that works across Gradio versions
-    with gr.Blocks(title="AI Doc Assist") as demo:
+    with gr.Blocks(title="AI Doc Assist", css="""
+        .gradio-container {height: 100vh !important;}
+        .chatbot-container {height: 70vh !important;}
+        .file-upload {height: 20vh !important;}
+        .document-list {height: 45vh !important;}
+        .input-box {height: 5vh !important;}
+        .send-button {height: 5vh !important; display: flex !important; align-items: center !important;}
+    """) as demo:
         gr.Markdown("# 🤖 AI Doc Assist")
-        gr.Markdown("Chat with your PDF documents using AI. Upload PDFs and ask questions!")
 
         if "Error" in load_result:
             gr.Markdown(f"### ⚠️ Warning\n{load_result}")
         
         with gr.Row(equal_height=True):
-            with gr.Column(scale=1):
+            with gr.Column(scale=1, min_width=300):
                 # PDF management - on the left
                 gr.Markdown("### 📄 Document Management")
                 
@@ -518,24 +571,24 @@ def web_ui():
                     label="Drag & Drop PDFs here (or click to upload)",
                     file_types=[".pdf"],
                     file_count="multiple",
-                    type="binary"  # Ensure binary mode for PDF files
+                    type="binary",
+                    elem_classes="file-upload"
                 )
                 
                 reload_btn = gr.Button("Reload PDFs")
                 
                 doc_list = gr.Textbox(
                     label="Available Documents", 
-                    value="\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded", 
-                    lines=10
+                    value="\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else "No documents loaded", 
+                    lines=10,
+                    elem_classes="document-list"
                 )
             
-            with gr.Column(scale=2):
+            with gr.Column(scale=2, min_width=500):
                 # Chat interface - on the right
                 gr.Markdown("### 💬 Chat with Documents")
                 
                 chatbot = gr.Chatbot(
-                    height="65vh",  # Dynamic height based on viewport
-                    container=True,
                     elem_classes="chatbot-container"
                 )
                 
@@ -544,11 +597,12 @@ def web_ui():
                         placeholder="Ask a question about your PDFs...",
                         container=False,
                         scale=7,
-                        show_label=False
+                        show_label=False,
+                        elem_classes="input-box"
                     )
-                    submit = gr.Button("Send", scale=1)
+                    submit = gr.Button("Send", scale=1, elem_classes="send-button")
         
-        # Connect file upload component - using upload event rather than change
+        # Connect file upload component
         file_component.upload(
             simple_upload_handler,
             inputs=[file_component],
@@ -556,29 +610,27 @@ def web_ui():
         )
         
         # Handle reload button
-        def reload_docs():
+        def reload_docs() -> str:
+            """Reload documents and update the document list."""
             log_info("Manual reload requested")
             load_documents()
             pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith('.pdf')]
             log_info(f"Files in {PDF_DIR} after reload: {pdf_files}")
-            return "\n".join([store["metadata"]["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
+            return "\n".join([store.metadata["title"] for store in vector_stores]) if vector_stores else "No documents loaded"
             
         reload_btn.click(reload_docs, outputs=doc_list)
 
         # Add automatic refresh on page load
         demo.load(reload_docs, outputs=doc_list)
         
-        # Handle chat interactions - simplified for compatibility
-        def respond(message, chat_history):
+        # Handle chat interactions
+        def respond(message: str, chat_history: List[tuple]) -> tuple:
+            """Process a chat message and update the chat history."""
             if not message.strip():
                 return "", chat_history
                 
-            # Process the question and get the answer
             answer = process_question(message)
-            
-            # Format the chat history as tuples (user, bot)
             chat_history.append((message, answer))
-            
             return "", chat_history
             
         msg.submit(respond, [msg, chatbot], [msg, chatbot])
@@ -588,9 +640,10 @@ def web_ui():
     demo.queue()
     return demo
 
-def main():
-    # Ensure the PDF and cache directories exist with proper permissions
+def main() -> None:
+    """Main entry point for the application."""
     try:
+        # Ensure the PDF and cache directories exist with proper permissions
         log_info(f"Ensuring directories exist: {PDF_DIR} and {CACHE_DIR}")
         os.makedirs(PDF_DIR, exist_ok=True)
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -613,11 +666,9 @@ def main():
     
     # Choose whether to run console or web interface
     if len(sys.argv) > 1 and sys.argv[1] == "--web":
-        # Run the web interface
         app = web_ui()
         app.launch(share=True)
     else:
-        # Run the console interface
         console_chat()
 
 if __name__ == "__main__":
